@@ -6,14 +6,7 @@ else
 LOCAL_KERNEL := $(TARGET_PREBUILT_KERNEL)
 endif
 
-ifeq ($(TARGET_PREBUILT_DTB),)
-LOCAL_DTB := device/amlogic/yukawa-kernel/meson-g12a-sei510.dtb
-else
-LOCAL_DTB := $(TARGET_PREBUILT_DTB)
-endif
-
-PRODUCT_COPY_FILES +=  $(LOCAL_KERNEL):kernel \
-                       $(LOCAL_DTB):meson-g12a-sei510.dtb \
+PRODUCT_COPY_FILES +=  $(LOCAL_KERNEL):kernel
 
 # Build and run only ART
 PRODUCT_RUNTIMES := runtime_libart_default
@@ -58,9 +51,13 @@ PRODUCT_PACKAGES += \
     TvSampleLeanbackLauncher \
     tv_input.default \
     com.android.media.tv.remoteprovider \
-    InputDevices \
+    InputDevices
+
+ifeq (,$(filter $(TARGET_PRODUCT),yukawa_gms yukawa_sei510_gms))
+PRODUCT_PACKAGES += \
     TVLauncherNoGms \
     TVRecommendationsNoGms
+endif
 
 PRODUCT_PROPERTY_OVERRIDES += ro.sf.lcd_density=320
 
@@ -79,9 +76,6 @@ PRODUCT_PACKAGES +=  vulkan.yukawa.so
 PRODUCT_PACKAGES += android.hardware.bluetooth@1.0-service.btlinux
 
 # Wifi
-PRODUCT_PACKAGES += \
-    android.hardware.wifi@1.0-service \
-    android.hardware.wifi@1.0
 PRODUCT_PACKAGES += libwpa_client wpa_supplicant hostapd wificond wifilogd wpa_cli
 PRODUCT_PROPERTY_OVERRIDES += wifi.interface=wlan0 \
                               wifi.supplicant_scan_interval=15
