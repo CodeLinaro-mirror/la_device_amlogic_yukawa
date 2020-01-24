@@ -1,7 +1,7 @@
 PRODUCT_SOONG_NAMESPACES += device/amlogic/yukawa
 
 ifeq ($(TARGET_PREBUILT_KERNEL),)
-LOCAL_KERNEL := device/amlogic/yukawa-kernel/Image.lz4
+LOCAL_KERNEL := device/amlogic/yukawa-kernel/Image.lz4-$(TARGET_KERNEL_USE)
 else
 LOCAL_KERNEL := $(TARGET_PREBUILT_KERNEL)
 endif
@@ -22,6 +22,8 @@ PRODUCT_AAPT_PREF_CONFIG := tvdpi
 PRODUCT_IS_ATV := true
 DEVICE_PACKAGE_OVERLAYS := device/amlogic/yukawa/overlay
 DEVICE_PACKAGE_OVERLAYS += device/google/atv/overlay
+
+PRODUCT_PACKAGES += llkd
 
 # All VNDK libraries (HAL interfaces, VNDK, VNDK-SP, LL-NDK)
 PRODUCT_PACKAGES += vndk_package
@@ -52,6 +54,9 @@ PRODUCT_PACKAGES += \
     tv_input.default \
     com.android.media.tv.remoteprovider \
     InputDevices
+
+PRODUCT_PACKAGES += \
+    LeanbackIME
 
 ifeq (,$(filter $(TARGET_PRODUCT),yukawa_gms yukawa_sei510_gms))
 PRODUCT_PACKAGES += \
@@ -104,8 +109,8 @@ PRODUCT_COPY_FILES += \
 
 PRODUCT_PACKAGES += \
     android.hardware.audio@2.0-service \
-    android.hardware.audio@4.0-impl \
-    android.hardware.audio.effect@4.0-impl \
+    android.hardware.audio@6.0-impl \
+    android.hardware.audio.effect@6.0-impl \
     android.hardware.soundtrigger@2.1-impl \
 
 # Hardware Composer HAL

@@ -49,6 +49,16 @@
 #include "audio_hw.h"
 #include "audio_aec.h"
 
+static int get_audio_output_port(audio_devices_t devices) {
+    /* Prefer HDMI, default to internal speaker */
+    int port = PORT_INTERNAL_SPEAKER;
+    if (devices & AUDIO_DEVICE_OUT_HDMI) {
+        port = PORT_HDMI;
+    }
+
+    return port;
+}
+
 static void timestamp_adjust(struct timespec* ts, ssize_t frames, uint32_t sampling_rate) {
     /* This function assumes the adjustment (in nsec) is less than the max value of long,
      * which for 32-bit long this is 2^31 * 1e-9 seconds, slightly over 2 seconds.
@@ -99,9 +109,10 @@ static int start_output_stream(struct alsa_stream_out *out)
     out->config.avail_min = PLAYBACK_PERIOD_SIZE;
     out->unavailable = true;
     unsigned int pcm_retry_count = PCM_OPEN_RETRIES;
+    int out_port = get_audio_output_port(out->devices);
 
     while (1) {
-        out->pcm = pcm_open(CARD_OUT, PORT_HDMI, PCM_OUT | PCM_MONOTONIC, &out->config);
+        out->pcm = pcm_open(CARD_OUT, out_port, PCM_OUT | PCM_MONOTONIC, &out->config);
         if ((out->pcm != NULL) && pcm_is_ready(out->pcm)) {
             break;
         } else {
@@ -215,16 +226,16 @@ static int out_set_parameters(struct audio_stream *stream, const char *kvpairs)
         val = atoi(value);
         pthread_mutex_lock(&adev->lock);
         pthread_mutex_lock(&out->lock);
-        if (((adev->devices & AUDIO_DEVICE_OUT_ALL) != val) && (val != 0)) {
-            adev->devices &= ~AUDIO_DEVICE_OUT_ALL;
-            adev->devices |= val;
+        if (((out->devices & AUDIO_DEVICE_OUT_ALL) != val) && (val != 0)) {
+            out->devices &= ~AUDIO_DEVICE_OUT_ALL;
+            out->devices |= val;
         }
         pthread_mutex_unlock(&out->lock);
         pthread_mutex_unlock(&adev->lock);
     }
 
     str_parms_destroy(parms);
-    return ret;
+    return 0;
 }
 
 static char * out_get_parameters(const struct audio_stream *stream, const char *keys)
@@ -244,7 +255,7 @@ static int out_set_volume(struct audio_stream_out *stream, float left,
         float right)
 {
     ALOGV("out_set_volume: Left:%f Right:%f", left, right);
-    return 0;
+    return -ENOSYS;
 }
 
 static ssize_t out_write(struct audio_stream_out *stream, const void* buffer,
@@ -255,6 +266,8 @@ static ssize_t out_write(struct audio_stream_out *stream, const void* buffer,
     struct alsa_audio_device *adev = out->dev;
     size_t frame_size = audio_stream_out_frame_size(stream);
     size_t out_frames = bytes / frame_size;
+
+    ALOGV("%s: devices: %d, bytes %zu", __func__, out->devices, bytes);
 
     /* acquiring hw device mutex systematically is useful if a low priority thread is waiting
      * on the output stream mutex - e.g. executing select_mode() while holding the hw device
@@ -281,6 +294,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void* buffer,
 
         struct aec_info info;
         get_pcm_timestamp(out->pcm, out->config.rate, &info, true /*isOutput*/);
+        out->timestamp = info.timestamp;
         info.bytes = out_frames * frame_size;
         int aec_ret = write_to_reference_fifo(adev->aec, (void *)buffer, &info);
         if (aec_ret) {
@@ -302,30 +316,24 @@ exit:
 static int out_get_render_position(const struct audio_stream_out *stream,
         uint32_t *dsp_frames)
 {
-    *dsp_frames = 0;
     ALOGV("out_get_render_position: dsp_frames: %p", dsp_frames);
-    return -EINVAL;
+    return -ENOSYS;
 }
 
 static int out_get_presentation_position(const struct audio_stream_out *stream,
                                    uint64_t *frames, struct timespec *timestamp)
 {
-    struct alsa_stream_out *out = (struct alsa_stream_out *)stream;
-    int ret = -1;
+    if (stream == NULL || frames == NULL || timestamp == NULL) {
+        return -EINVAL;
+    }
+    struct alsa_stream_out* out = (struct alsa_stream_out*)stream;
 
-        if (out->pcm) {
-            unsigned int avail;
-            if (pcm_get_htimestamp(out->pcm, &avail, timestamp) == 0) {
-                size_t kernel_buffer_size = out->config.period_size * out->config.period_count;
-                int64_t signed_frames = out->frames_written - kernel_buffer_size + avail;
-                if (signed_frames >= 0) {
-                    *frames = signed_frames;
-                    ret = 0;
-                }
-            }
-        }
+    *frames = out->frames_written;
+    *timestamp = out->timestamp;
+    ALOGV("%s: frames: %" PRIu64 ", timestamp (nsec): %" PRIu64, __func__, *frames,
+          audio_utils_ns_from_timespec(timestamp));
 
-    return ret;
+    return 0;
 }
 
 
@@ -346,7 +354,7 @@ static int out_get_next_write_timestamp(const struct audio_stream_out *stream,
 {
     *timestamp = 0;
     ALOGV("out_get_next_write_timestamp: %ld", (long int)(*timestamp));
-    return -EINVAL;
+    return -ENOSYS;
 }
 
 /** audio_stream_in implementation **/
@@ -378,6 +386,22 @@ static int start_input_stream(struct alsa_stream_in *in)
     in->unavailable = false;
     adev->active_input = in;
     return 0;
+}
+
+static void get_mic_characteristics(struct audio_microphone_characteristic_t* mic_data,
+                                    size_t* mic_count) {
+    *mic_count = 1;
+    strcpy(mic_data->device_id, "builtin_mic");
+    strcpy(mic_data->address, "top");
+    mic_data->sensitivity = -37.0;
+    mic_data->max_spl = AUDIO_MICROPHONE_SPL_UNKNOWN;
+    mic_data->min_spl = AUDIO_MICROPHONE_SPL_UNKNOWN;
+    mic_data->orientation.x = 0.0f;
+    mic_data->orientation.y = 0.0f;
+    mic_data->orientation.z = 0.0f;
+    mic_data->geometric_location.x = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
+    mic_data->geometric_location.y = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
+    mic_data->geometric_location.z = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
 }
 
 static uint32_t in_get_sample_rate(const struct audio_stream *stream)
@@ -464,6 +488,24 @@ static int in_standby(struct audio_stream *stream)
 
 static int in_dump(const struct audio_stream *stream, int fd)
 {
+    struct alsa_stream_in* in = (struct alsa_stream_in*)stream;
+    if (in->source == AUDIO_SOURCE_ECHO_REFERENCE) {
+        return 0;
+    }
+
+    struct audio_microphone_characteristic_t mic_array[AUDIO_MICROPHONE_MAX_COUNT];
+    size_t mic_count;
+
+    get_mic_characteristics(mic_array, &mic_count);
+
+    dprintf(fd, "  Microphone count: %zd\n", mic_count);
+    size_t idx;
+    for (idx = 0; idx < mic_count; idx++) {
+        dprintf(fd, "  Microphone: %zd\n", idx);
+        dprintf(fd, "    Address: %s\n", mic_array[idx].address);
+        dprintf(fd, "    Sensitivity (dB): %.2f\n", mic_array[idx].sensitivity);
+    }
+
     return 0;
 }
 
@@ -662,7 +704,9 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     struct pcm_params *params;
     int ret = 0;
 
-    params = pcm_params_get(CARD_OUT, PORT_HDMI, PCM_OUT);
+    int out_port = get_audio_output_port(devices);
+
+    params = pcm_params_get(CARD_OUT, out_port, PCM_OUT);
     if (!params)
         return -ENOSYS;
 
@@ -704,12 +748,13 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
         ret = -EINVAL;
     }
 
-    ALOGI("adev_open_output_stream selects channels=%d rate=%d format=%d",
-                out->config.channels, out->config.rate, out->config.format);
+    ALOGI("adev_open_output_stream selects channels=%d rate=%d format=%d, devices=%d",
+          out->config.channels, out->config.rate, out->config.format, devices);
 
     out->dev = ladev;
     out->standby = 1;
     out->unavailable = false;
+    out->devices = devices;
 
     config->format = out_get_format(&out->stream.common);
     config->channel_mask = out_get_channels(&out->stream.common);
@@ -753,26 +798,11 @@ static char * adev_get_parameters(const struct audio_hw_device *dev,
     return strdup("");
 }
 
-static void set_mic_characteristics(struct audio_microphone_characteristic_t* mic_data) {
-    strcpy(mic_data->device_id, "builtin_mic");
-    strcpy(mic_data->address, "top");
-    mic_data->sensitivity = -37.0;
-    mic_data->max_spl = AUDIO_MICROPHONE_SPL_UNKNOWN;
-    mic_data->min_spl = AUDIO_MICROPHONE_SPL_UNKNOWN;
-    mic_data->orientation.x = 0.0f;
-    mic_data->orientation.y = 0.0f;
-    mic_data->orientation.z = 0.0f;
-    mic_data->geometric_location.x = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
-    mic_data->geometric_location.y = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
-    mic_data->geometric_location.z = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
-}
-
 static int adev_get_microphones(const struct audio_hw_device* dev,
                                 struct audio_microphone_characteristic_t* mic_array,
                                 size_t* mic_count) {
     ALOGV("adev_get_microphones");
-    set_mic_characteristics(mic_array);
-    *mic_count = 1;
+    get_mic_characteristics(mic_array, mic_count);
     return 0;
 }
 
@@ -785,7 +815,7 @@ static int adev_init_check(const struct audio_hw_device *dev)
 static int adev_set_voice_volume(struct audio_hw_device *dev, float volume)
 {
     ALOGV("adev_set_voice_volume: %f", volume);
-    return -ENOSYS;
+    return 0;
 }
 
 static int adev_set_master_volume(struct audio_hw_device *dev, float volume)
@@ -903,6 +933,7 @@ static int adev_open_input_stream(struct audio_hw_device* dev, audio_io_handle_t
     in->standby = true;
     in->unavailable = false;
     in->source = source;
+    in->devices = devices;
 
     config->format = in_get_format(&in->stream.common);
     config->channel_mask = in_get_channels(&in->stream.common);
@@ -1000,8 +1031,6 @@ static int adev_open(const hw_module_t* module, const char* name,
     adev->hw_device.close_input_stream = adev_close_input_stream;
     adev->hw_device.dump = adev_dump;
     adev->hw_device.get_microphones = adev_get_microphones;
-
-    adev->devices = AUDIO_DEVICE_NONE;
 
     *device = &adev->hw_device.common;
 
