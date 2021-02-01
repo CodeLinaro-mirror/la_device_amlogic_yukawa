@@ -17,14 +17,19 @@ $(call inherit-product, $(SRC_TARGET_DIR)/product/updatable_apex.mk)
 # Enable Scoped Storage related
 $(call inherit-product, $(SRC_TARGET_DIR)/product/emulated_storage.mk)
 
+DEVICE_PACKAGE_OVERLAYS := device/amlogic/yukawa/overlay
+ifeq ($(TARGET_USE_TABLET_LAUNCHER), true)
+# Setup tablet build
+$(call inherit-product, frameworks/native/build/tablet-10in-xhdpi-2048-dalvik-heap.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/full_base.mk)
+else
 # Setup TV Build
 USE_OEM_TV_APP := true
 $(call inherit-product, device/google/atv/products/atv_base.mk)
 PRODUCT_CHARACTERISTICS := tv
 PRODUCT_AAPT_PREF_CONFIG := tvdpi
 PRODUCT_IS_ATV := true
-DEVICE_PACKAGE_OVERLAYS := device/amlogic/yukawa/overlay
-DEVICE_PACKAGE_OVERLAYS += device/google/atv/overlay
+endif
 
 PRODUCT_PACKAGES += llkd
 
@@ -119,6 +124,11 @@ PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/binaries/bt-wifi-firmware/fw_bcm4359c0_ag.bin:$(TARGET_COPY_OUT_VENDOR)/firmware/brcm/fw_bcm4359c0_ag.bin \
     $(LOCAL_PATH)/binaries/bt-wifi-firmware/nvram.txt:$(TARGET_COPY_OUT_VENDOR)/firmware/brcm/nvram.txt \
 
+
+ifeq ($(TARGET_USE_TABLET_LAUNCHER), true)
+# Use Launcher3QuickStep
+PRODUCT_PACKAGES += Launcher3QuickStep
+else
 ifeq ($(TARGET_USE_SAMPLE_LAUNCHER), true)
 PRODUCT_PACKAGES += \
     TvSampleLeanbackLauncher
@@ -141,6 +151,7 @@ ifeq (,$(filter $(TARGET_PRODUCT),yukawa_gms yukawa_sei510_gms))
 PRODUCT_PACKAGES += \
     TVLauncherNoGms \
     TVRecommendationsNoGms
+endif
 endif
 
 PRODUCT_PACKAGES += \
@@ -317,13 +328,21 @@ PRODUCT_COPY_FILES +=  \
 USE_XML_AUDIO_POLICY_CONF := 1
 PRODUCT_COPY_FILES += \
     device/amlogic/yukawa/hal/audio/mixer_paths.xml:$(TARGET_COPY_OUT_VENDOR)/etc/mixer_paths.xml \
-    device/amlogic/yukawa/hal/audio/audio_policy_configuration.xml:$(TARGET_COPY_OUT_VENDOR)/etc/audio_policy_configuration.xml \
     frameworks/av/services/audiopolicy/config/a2dp_audio_policy_configuration.xml:$(TARGET_COPY_OUT_VENDOR)/etc/a2dp_audio_policy_configuration.xml \
     frameworks/av/services/audiopolicy/config/r_submix_audio_policy_configuration.xml:$(TARGET_COPY_OUT_VENDOR)/etc/r_submix_audio_policy_configuration.xml \
     frameworks/av/services/audiopolicy/config/usb_audio_policy_configuration.xml:$(TARGET_COPY_OUT_VENDOR)/etc/usb_audio_policy_configuration.xml \
     frameworks/av/services/audiopolicy/config/default_volume_tables.xml:$(TARGET_COPY_OUT_VENDOR)/etc/default_volume_tables.xml \
     frameworks/av/services/audiopolicy/config/audio_policy_volumes.xml:$(TARGET_COPY_OUT_VENDOR)/etc/audio_policy_volumes.xml \
     frameworks/av/media/libeffects/data/audio_effects.xml:$(TARGET_COPY_OUT_VENDOR)/etc/audio_effects.xml 
+
+AUDIO_DEFAULT_OUTPUT ?= speaker
+ifeq ($(AUDIO_DEFAULT_OUTPUT),hdmi)
+PRODUCT_COPY_FILES += \
+    device/amlogic/yukawa/hal/audio/audio_policy_configuration_hdmi_only.xml:$(TARGET_COPY_OUT_VENDOR)/etc/audio_policy_configuration.xml
+else
+PRODUCT_COPY_FILES += \
+    device/amlogic/yukawa/hal/audio/audio_policy_configuration.xml:$(TARGET_COPY_OUT_VENDOR)/etc/audio_policy_configuration.xml
+endif
 
 # Copy media codecs config file
 PRODUCT_COPY_FILES += \
