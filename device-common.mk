@@ -217,7 +217,7 @@ PRODUCT_PACKAGES += \
     android.hardware.drm@1.0-impl \
     android.hardware.drm@1.0-service \
     android.hardware.drm@1.4-service.widevine \
-    android.hardware.drm@1.3-service.clearkey
+    android.hardware.drm@1.4-service.clearkey
 
 # CEC
 PRODUCT_PACKAGES += \
@@ -361,6 +361,12 @@ PRODUCT_COPY_FILES += \
 PRODUCT_PACKAGES += \
     android.hardware.light-service \
     lights-yukawa
+
+# Enable USB Camera
+PRODUCT_PACKAGES += android.hardware.camera.provider@2.4-impl
+PRODUCT_PACKAGES += android.hardware.camera.provider@2.4-external-service
+PRODUCT_COPY_FILES += \
+    device/amlogic/yukawa/hal/camera/external_camera_config.xml:$(TARGET_COPY_OUT_VENDOR)/etc/external_camera_config.xml
 
 # Include Virtualization APEX
 $(call inherit-product, packages/modules/Virtualization/apex/product_packages.mk)
